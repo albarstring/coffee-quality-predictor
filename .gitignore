@@ -10,3 +10,4 @@ __pycache__/
 *.png
 *.jpg
 .streamlit/secrets.toml
+coffee_quality_artifacts.joblib
