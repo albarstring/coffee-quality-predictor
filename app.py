@@ -13,6 +13,7 @@ import seaborn as sns
 import shap
 import streamlit as st
 from pathlib import Path
+from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
@@ -27,7 +28,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-ARTIFACT_PATH = Path(__file__).with_name("coffee_quality_artifacts.joblib")
+ARTIFACT_PATH = Path(__file__).with_name("coffee_quality_artifacts_v2.joblib")
 
 st.markdown("""
 <style>
@@ -220,6 +221,9 @@ def load_and_train():
     X = df_model[semua_fitur]
     y = df_model["target"]
 
+    smote = SMOTE(random_state=42)
+    X, y = smote.fit_resample(X, y)
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
     scaler = StandardScaler()
@@ -227,10 +231,10 @@ def load_and_train():
     X_test_s = scaler.transform(X_test)
 
     models = {
-        "Random Forest": RandomForestClassifier(n_estimators=300, max_depth=20, random_state=42, class_weight="balanced"),
-        "XGBoost": XGBClassifier(n_estimators=300, max_depth=6, learning_rate=0.05, random_state=42, verbosity=0, eval_metric="mlogloss"),
+        "Random Forest": RandomForestClassifier(n_estimators=300, max_depth=20, random_state=42),
+        "XGBoost": XGBClassifier(n_estimators=300, max_depth=6, learning_rate=0.05, random_state=42, verbosity=0, use_label_encoder=False, eval_metric="mlogloss"),
         "Gradient Boosting": GradientBoostingClassifier(n_estimators=200, max_depth=5, random_state=42),
-        "Logistic Regression": LogisticRegression(max_iter=2000, random_state=42, class_weight="balanced"),
+        "Logistic Regression": LogisticRegression(max_iter=2000, random_state=42, multi_class="auto"),
     }
 
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
