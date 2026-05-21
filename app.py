@@ -6,11 +6,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import joblib
 import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
 import shap
 import streamlit as st
+from pathlib import Path
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
@@ -24,6 +26,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+ARTIFACT_PATH = Path(__file__).with_name("coffee_quality_artifacts.joblib")
 
 st.markdown("""
 <style>
@@ -154,6 +158,9 @@ div[data-testid="stSidebar"] .stSelectbox label {
 
 @st.cache_resource(show_spinner="☕ Loading model and data...")
 def load_and_train():
+    if ARTIFACT_PATH.exists():
+        return joblib.load(ARTIFACT_PATH)
+
     url_arabica = "https://raw.githubusercontent.com/jldbc/coffee-quality-database/master/data/arabica_data_cleaned.csv"
     url_robusta = "https://raw.githubusercontent.com/jldbc/coffee-quality-database/master/data/robusta_data_cleaned.csv"
 
@@ -242,7 +249,7 @@ def load_and_train():
     best_name = max(hasil, key=lambda x: hasil[x]["acc"])
     best_mdl = hasil[best_name]["model"]
 
-    return {
+    artifacts = {
         "df": df,
         "df_arabica": df_arabica,
         "df_robusta": df_robusta,
@@ -259,6 +266,9 @@ def load_and_train():
         "best_mdl": best_mdl,
         "target_map": target_map,
     }
+
+    joblib.dump(artifacts, ARTIFACT_PATH, compress=3)
+    return artifacts
 
 
 try:
@@ -446,17 +456,27 @@ with tab1:
 
 with tab2:
     st.markdown("**📊 Dataset Overview**")
+    filtered_df = df.copy()
+    if "Species" in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df["Species"] == species]
+    if "Processing.Method" in filtered_df.columns and processing in filtered_df["Processing.Method"].astype(str).unique():
+        filtered_df = filtered_df[filtered_df["Processing.Method"] == processing]
+    if filtered_df.empty:
+        filtered_df = df.copy()
+
+    st.caption(f"Filtered view based on sidebar selection: {species} • {processing}")
+
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Samples", f"{len(df):,}")
-    m2.metric("Arabica", f"{len(df_arabica):,}")
-    m3.metric("Robusta", f"{len(df_robusta):,}")
-    m4.metric("Avg Score", f"{df['Total.Cup.Points'].mean():.2f}")
+    m1.metric("Total Samples", f"{len(filtered_df):,}")
+    m2.metric("Arabica", f"{int((filtered_df['Species'] == 'Arabica').sum()):,}")
+    m3.metric("Robusta", f"{int((filtered_df['Species'] == 'Robusta').sum()):,}")
+    m4.metric("Avg Score", f"{filtered_df['Total.Cup.Points'].mean():.2f}")
 
     col_left, col_right = st.columns(2)
 
     with col_left:
         st.markdown("**Score Distribution**")
-        fig = px.histogram(df, x="Total.Cup.Points", nbins=30, title="", labels={"Total.Cup.Points": "Cup Points", "count": "Count"})
+        fig = px.histogram(filtered_df, x="Total.Cup.Points", nbins=30, title="", labels={"Total.Cup.Points": "Cup Points", "count": "Count"})
         fig.add_vline(x=80, line_dash="dash", line_color="#FF9800", annotation_text="Specialty (80)", annotation_position="top right")
         fig.add_vline(x=87, line_dash="dash", line_color="#4CAF50", annotation_text="Premium (87)", annotation_position="top left")
         fig.update_traces(marker_color="#8B6F47")
@@ -464,7 +484,7 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("**Quality Distribution**")
-        kualitas_count = df["Kualitas"].value_counts()
+        kualitas_count = filtered_df["Kualitas"].value_counts()
         colors_kopi = ["#4CAF50", "#2196F3", "#FF9800", "#F44336"]
         fig = go.Figure(data=[go.Pie(labels=kualitas_count.index, values=kualitas_count.values, marker=dict(colors=colors_kopi))])
         fig.update_layout(template="plotly_white", height=400, paper_bgcolor="#f5f3f0", plot_bgcolor="#f5f3f0", font=dict(color="#3d2b1f"))
@@ -472,13 +492,13 @@ with tab2:
 
     with col_right:
         st.markdown("**Sensory Correlation**")
-        sensori_corr = df[sensori + ["Total.Cup.Points"]].corr()
+        sensori_corr = filtered_df[sensori + ["Total.Cup.Points"]].corr()
         fig = px.imshow(sensori_corr, color_continuous_scale="YlOrBr", aspect="auto", labels=dict(color="Correlation"))
         fig.update_layout(template="plotly_white", height=450, paper_bgcolor="#f5f3f0", plot_bgcolor="#f5f3f0", font=dict(color="#3d2b1f"))
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("**Species Comparison**")
-        species_quality = df.groupby(["Species", "Kualitas"]).size().unstack(fill_value=0)
+        species_quality = filtered_df.groupby(["Species", "Kualitas"]).size().unstack(fill_value=0)
         fig = go.Figure()
         colors_kopi = ["#4CAF50", "#2196F3", "#FF9800", "#F44336"]
         for i, quality in enumerate(species_quality.columns):
