@@ -234,7 +234,7 @@ def load_and_train():
         "Random Forest": RandomForestClassifier(n_estimators=300, max_depth=20, random_state=42),
         "XGBoost": XGBClassifier(n_estimators=300, max_depth=6, learning_rate=0.05, random_state=42, verbosity=0, use_label_encoder=False, eval_metric="mlogloss"),
         "Gradient Boosting": GradientBoostingClassifier(n_estimators=200, max_depth=5, random_state=42),
-        "Logistic Regression": LogisticRegression(max_iter=2000, random_state=42, multi_class="auto"),
+        "Logistic Regression": LogisticRegression(max_iter=2000, random_state=42),
     }
 
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
