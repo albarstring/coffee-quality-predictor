@@ -13,7 +13,6 @@ import seaborn as sns
 import shap
 import streamlit as st
 from pathlib import Path
-from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
@@ -28,7 +27,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-ARTIFACT_PATH = Path(__file__).with_name("coffee_quality_artifacts_v2.joblib")
+ARTIFACT_PATH = Path(__file__).with_name("coffee_quality_artifacts_v3.joblib")
 
 st.markdown("""
 <style>
@@ -162,6 +161,21 @@ def load_and_train():
     if ARTIFACT_PATH.exists():
         return joblib.load(ARTIFACT_PATH)
 
+    def random_oversample(X_data, y_data, random_state=42):
+        frame = X_data.copy()
+        frame["__target__"] = y_data
+        max_count = frame["__target__"].value_counts().max()
+        balanced_parts = []
+        for target_value, group in frame.groupby("__target__"):
+            if len(group) < max_count:
+                sampled = group.sample(max_count, replace=True, random_state=random_state)
+            else:
+                sampled = group
+            balanced_parts.append(sampled)
+        balanced = pd.concat(balanced_parts, ignore_index=True).sample(frac=1, random_state=random_state).reset_index(drop=True)
+        y_balanced = balanced.pop("__target__")
+        return balanced, y_balanced
+
     url_arabica = "https://raw.githubusercontent.com/jldbc/coffee-quality-database/master/data/arabica_data_cleaned.csv"
     url_robusta = "https://raw.githubusercontent.com/jldbc/coffee-quality-database/master/data/robusta_data_cleaned.csv"
 
@@ -221,8 +235,7 @@ def load_and_train():
     X = df_model[semua_fitur]
     y = df_model["target"]
 
-    smote = SMOTE(random_state=42)
-    X, y = smote.fit_resample(X, y)
+    X, y = random_oversample(X, y)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
