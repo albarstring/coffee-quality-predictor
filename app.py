@@ -17,6 +17,7 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
@@ -161,18 +162,53 @@ def load_and_train():
     if ARTIFACT_PATH.exists():
         return joblib.load(ARTIFACT_PATH)
 
-    def random_oversample(X_data, y_data, random_state=42):
-        frame = X_data.copy()
-        frame["__target__"] = y_data
-        max_count = frame["__target__"].value_counts().max()
-        balanced_parts = []
-        for target_value, group in frame.groupby("__target__"):
-            if len(group) < max_count:
-                sampled = group.sample(max_count, replace=True, random_state=random_state)
+    def smote_resample(X_data, y_data, random_state=42, k_neighbors=5):
+        rng = np.random.default_rng(random_state)
+        X_frame = pd.DataFrame(X_data).reset_index(drop=True)
+        y_series = pd.Series(y_data).reset_index(drop=True)
+
+        class_counts = y_series.value_counts().to_dict()
+        max_count = max(class_counts.values())
+
+        combined_frames = [X_frame.assign(__target__=y_series)]
+
+        for class_label, count in class_counts.items():
+            if count >= max_count:
+                continue
+
+            class_mask = y_series == class_label
+            X_class = X_frame.loc[class_mask].reset_index(drop=True)
+            n_samples_needed = max_count - count
+
+            if len(X_class) == 1:
+                synthetic_samples = np.repeat(X_class.values, n_samples_needed, axis=0)
             else:
-                sampled = group
-            balanced_parts.append(sampled)
-        balanced = pd.concat(balanced_parts, ignore_index=True).sample(frac=1, random_state=random_state).reset_index(drop=True)
+                n_neighbors = min(k_neighbors, len(X_class) - 1)
+                nn = NearestNeighbors(n_neighbors=n_neighbors + 1)
+                nn.fit(X_class)
+                neighbor_indices = nn.kneighbors(X_class, return_distance=False)
+
+                synthetic_samples = []
+                for _ in range(n_samples_needed):
+                    sample_idx = rng.integers(0, len(X_class))
+                    sample = X_class.iloc[sample_idx].to_numpy(dtype=float)
+
+                    neighbors = neighbor_indices[sample_idx][1:]
+                    neighbor_idx = rng.choice(neighbors)
+                    neighbor = X_class.iloc[neighbor_idx].to_numpy(dtype=float)
+
+                    gap = rng.random()
+                    synthetic = sample + gap * (neighbor - sample)
+                    synthetic_samples.append(synthetic)
+
+                synthetic_samples = np.asarray(synthetic_samples)
+
+            synthetic_frame = pd.DataFrame(synthetic_samples, columns=X_frame.columns)
+            synthetic_targets = pd.Series([class_label] * len(synthetic_frame))
+
+            combined_frames.append(synthetic_frame.assign(__target__=synthetic_targets))
+
+        balanced = pd.concat(combined_frames, ignore_index=True).sample(frac=1, random_state=random_state).reset_index(drop=True)
         y_balanced = balanced.pop("__target__")
         return balanced, y_balanced
 
@@ -235,7 +271,7 @@ def load_and_train():
     X = df_model[semua_fitur]
     y = df_model["target"]
 
-    X, y = random_oversample(X, y)
+    X, y = smote_resample(X, y)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
